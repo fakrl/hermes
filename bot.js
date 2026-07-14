@@ -11,7 +11,7 @@ const HISTORY_FILE = './history.json'
 const QUESTIONS_LOG = './questions_log.md'
 const MEMORY_FILE = './memory.md'
 const SOUL_PATH = path.join(os.homedir(), '.hermes', 'SOUL.md')
-const ADMIN = process.env.ADMIN_NUMBER + '@c.us'
+const ADMIN = process.env.ADMIN_NUMBER  // full chatId, e.g. 628xxx@c.us or @lid
 const startTime = Date.now()
 
 // Rate limit: max 10 pesan per 5 menit per user, cooldown 10 menit
@@ -31,9 +31,26 @@ const cooldownMap = {}    // chatId -> cooldown end timestamp
 const burstBuffer = {}    // chatId -> { timer, messages[] }
 
 const ai = new OpenAI({
+  baseURL: 'https://api.groq.com/openai/v1',
+  apiKey: process.env.GROQ_API_KEY,
+})
+const aiFallback = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY,
 })
+
+async function callAI(messages) {
+  try {
+    const res = await ai.chat.completions.create({ model: process.env.MODEL_PRIMARY, messages })
+    if (res?.choices?.[0]) return res.choices[0].message.content
+  } catch (err) {
+    if (err.status !== 429) throw err
+    console.log('Groq rate limited, fallback ke OpenRouter')
+  }
+  const res = await aiFallback.chat.completions.create({ model: process.env.MODEL_FALLBACK, messages })
+  if (!res?.choices?.[0]) throw new Error('Bad API response: ' + JSON.stringify(res))
+  return res.choices[0].message.content
+}
 
 // --- History ---
 const history = fs.existsSync(HISTORY_FILE)
@@ -72,18 +89,25 @@ async function notifyAdmin(text) {
   try { await client.sendMessage(ADMIN, `🤖 Alert:\n${text}`) } catch (_) {}
 }
 
+async function compressMemory() {
+  const current = fs.existsSync(MEMORY_FILE) ? fs.readFileSync(MEMORY_FILE, 'utf8') : ''
+  if (current.split('\n').length < 40) return
+  try {
+    const compressed = (await callAI([{ role: 'user', content: `Ini memory bot WA pribadi Fakrul. Rangkum jadi maksimal 20 poin paling penting, format "- <fakta>". Hapus duplikat dan yang tidak relevan.\n\n${current}` }])).trim()
+    fs.writeFileSync(MEMORY_FILE, compressed)
+    console.log('Memory compressed')
+  } catch (_) {}
+}
+
 // ponytail: fire-and-forget memory update
 async function updateMemory(userMsg, botReply) {
   const currentMemory = fs.existsSync(MEMORY_FILE) ? fs.readFileSync(MEMORY_FILE, 'utf8') : ''
   try {
-    const res = await ai.chat.completions.create({
-      model: process.env.MODEL,
-      messages: [{ role: 'user', content: `Percakapan:\nUser: ${userMsg}\nBot: ${botReply}\n\nMemory ada:\n${currentMemory}\n\nAda info baru yang berguna? Tulis SATU baris dimulai "- ". Kalau tidak ada/sudah ada: SKIP` }]
-    })
-    const extracted = res.choices[0].message.content.trim()
+    const extracted = (await callAI([{ role: 'user', content: `Percakapan:\nUser: ${userMsg}\nBot: ${botReply}\n\nMemory ada:\n${currentMemory}\n\nAda info baru yang berguna? Tulis SATU baris dimulai "- ". Kalau tidak ada/sudah ada: SKIP` }])).trim()
     if (!extracted.startsWith('SKIP') && extracted.startsWith('- ')) {
       fs.appendFileSync(MEMORY_FILE, `\n${extracted}`)
       console.log('Memory updated:', extracted)
+      compressMemory()
     }
   } catch (_) {}
 }
@@ -161,11 +185,7 @@ async function processMessage(msg, chatId, text) {
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await ai.chat.completions.create({
-        model: process.env.MODEL,
-        messages: [{ role: 'system', content: systemPrompt }, ...history[chatId]],
-      })
-      let reply = res.choices[0].message.content
+      let reply = await callAI([{ role: 'system', content: systemPrompt }, ...history[chatId]])
 
       // Portfolio trigger
       if (contains(text, PORTFOLIO_KEYWORDS)) {
@@ -245,25 +265,34 @@ async function handleAdmin(msg) {
     if (!history[target]?.length) return `Tidak ada history untuk ${args}`
     return history[target].slice(-10).map(m => `[${m.role}]: ${m.content}`).join('\n\n')
   }
+  if (cmd === '/forget') {
+    if (!args) return 'Usage: /forget <kata kunci>'
+    if (!fs.existsSync(MEMORY_FILE)) return 'Memory kosong.'
+    const lines = fs.readFileSync(MEMORY_FILE, 'utf8').split('\n')
+    const filtered = lines.filter(l => !l.toLowerCase().includes(args.toLowerCase()))
+    fs.writeFileSync(MEMORY_FILE, filtered.join('\n'))
+    return `Baris yang mengandung "${args}" dihapus.`
+  }
   if (cmd === '/help') {
-    return `Perintah admin:\n/status — statistik bot\n/log — 10 pertanyaan terakhir\n/memory — isi memory\n/add <teks> — tambah memory\n/soul <teks> — update personality\n/pause — mode manual\n/resume — aktifkan bot\n/clear <nomor> — hapus history\n/chat <nomor> — lihat riwayat\n/help — daftar perintah`
+    return `Perintah admin:\n/status — statistik bot\n/log — 10 pertanyaan terakhir\n/memory — isi memory\n/add <teks> — tambah memory\n/forget <kata kunci> — hapus baris dari memory\n/soul <teks> — update personality\n/pause — mode manual\n/resume — aktifkan bot\n/clear <nomor> — hapus history\n/chat <nomor> — lihat riwayat\n/help — daftar perintah`
   }
 
-  // Pesan bebas dari admin
-  const res = await ai.chat.completions.create({
-    model: process.env.MODEL,
-    messages: [
-      { role: 'system', content: 'Kamu adalah Hermes, asisten pribadi Fakrul. Ini Fakrul sendiri. Jawab santai dan langsung.' },
-      { role: 'user', content: text }
-    ]
-  })
-  return res.choices[0].message.content
+  // Pesan bebas dari admin — owner mode: pakai SOUL tapi tanpa gatekeeper
+  const adminPrompt = `Kamu adalah Hermes, bot WA pribadi Fakrul Mukhlisin — Full Stack Developer, owner dan satu-satunya admin bot ini. Yang ngobrol sama kamu sekarang adalah FAKRUL MUKHLISIN sendiri. Kalau dia tanya "gua siapa" atau "gua admin bukan", jawab tegas: dia Fakrul, owner lo. Jawab santai, langsung, boleh bercanda. Plain text pendek, kayak chat biasa — jangan list, jangan formal.`
+  if (!history[ADMIN]) history[ADMIN] = []
+  history[ADMIN].push({ role: 'user', content: text })
+  if (history[ADMIN].length > 20) history[ADMIN].shift()
+  const reply = await callAI([{ role: 'system', content: adminPrompt }, ...history[ADMIN]])
+  history[ADMIN].push({ role: 'assistant', content: reply })
+  saveHistory()
+  updateMemory(text, reply)
+  return reply
 }
 
 // --- WhatsApp client ---
 const client = new Client({
   authStrategy: new LocalAuth(),
-  puppeteer: { args: ['--no-sandbox'], protocolTimeout: 60000 }
+  puppeteer: { args: ['--no-sandbox', '--disable-dev-shm-usage'], protocolTimeout: 0 }
 })
 
 client.on('qr', qr => {
@@ -274,11 +303,12 @@ client.on('qr', qr => {
 client.on('ready', () => console.log('✅ Bot aktif!'))
 
 client.on('message', async msg => {
-  if (msg.fromMe || !msg.body) return
+  if (!msg.body) return
 
   const chatId = msg.from
   const isGroup = chatId.includes('@g.us')
-  const isAdmin = chatId === ADMIN
+  // ponytail: resolve actual phone from @lid via getContact, fallback to chatId parse
+  const isAdmin = msg.fromMe || chatId === ADMIN
 
   // Admin bypass semua filter
   if (isAdmin) {
@@ -287,7 +317,9 @@ client.on('message', async msg => {
     return
   }
 
-  if (isGroup || paused) return
+  if (msg.fromMe) return
+
+  if (isGroup || paused || msg.body.startsWith('/')) return
 
   // Rate limit
   const rateStatus = checkRateLimit(chatId)
