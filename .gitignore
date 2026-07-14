@@ -1,0 +1,8 @@
+node_modules/
+.env
+.wwebjs_auth/
+.wwebjs_cache/
+history.json
+questions_log.md
+fakrul_private.json
+*.pdf

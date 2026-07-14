@@ -1,0 +1,101 @@
+{
+  "identity": {
+    "name": "Fakhrul Mukhlisin",
+    "nickname": "Fakrul",
+    "role": "Full Stack Developer / Software Engineer",
+    "current_position": "Fullstack Developer Intern — PT Indotech Digital Group",
+    "education": "S1 Sistem Informasi, Universitas Pamulang (Semester 6, GPA 3.68/4.0)",
+    "domicile": "Cinere, Depok (mepet Tangsel & Jakarta Selatan)",
+    "linkedin": "linkedin.com/in/fakrl",
+    "github": "github.com/fakrl",
+    "portfolio": "fakrul.netlify.app"
+  },
+
+  "contact": {
+    "whatsapp": "+62 813 1532 4195",
+    "email_work": "fakhrul@indotechdigital.id",
+    "note": "Hubungi via WA untuk respons paling cepat"
+  },
+
+  "skills": {
+    "primary": ["Laravel 11", "PHP 8.2+", "Vue.js 2", "Golang (Gin)", "MySQL", "JavaScript", "Git/GitHub"],
+    "frontend": ["Blade", "Bootstrap 5", "HTML5", "CSS3", "CSS Variables"],
+    "backend": ["REST API", "JWT + RBAC", "Clean Architecture", "Eloquent ORM", "Yajra DataTables"],
+    "cloud_ai": ["Azure OpenAI", "Huawei Cloud (ECS/VPC/RDS/OBS/IAM)", "Prompt Engineering", "AI-assisted development"],
+    "tools": ["Figma", "Postman", "GitLab CI/CD", "Jira"]
+  },
+
+  "experience_highlights": [
+    {
+      "company": "PT Indotech Digital Group",
+      "role": "Fullstack Developer Intern",
+      "period": "Jun 2026 – Agu 2026",
+      "project": "Nobel Akademi (LMS) — modul Bootcamp full-stack di Laravel 11: data model, backend, admin CMS, halaman publik"
+    },
+    {
+      "company": "Evermos × Rakamin",
+      "role": "Backend Developer Intern",
+      "period": "Des 2025",
+      "highlight": "Marketplace REST API (Golang, MySQL, JWT) — Score 90.91/100"
+    },
+    {
+      "company": "Core Initiative × Rakamin",
+      "role": "Frontend Developer Intern",
+      "period": "Okt–Nov 2025",
+      "highlight": "E-Commerce Catalog (Vue.js 2) — Score 87.79/100"
+    }
+  ],
+
+  "certifications": [
+    "Junior Web Developer — BNSP / Kominfo (Valid s/d 2026)",
+    "HCIA Cloud Service — Huawei / Komdigi",
+    "Azure OpenAI Prompt Engineering — Microsoft / Komdigi",
+    "Fundamental Project Management — Google / Komdigi",
+    "Linear Models in ML — Yandex / Komdigi (#5 dari 926 peserta)"
+  ],
+
+  "achievements": [
+    "#5 dari 926 peserta — Yandex ML Competition",
+    "Score 90.91/100 — Evermos Backend Internship",
+    "Score 87.79/100 — Core Initiative Frontend Internship",
+    "GPA 3.68/4.0 — First Class",
+    "BNSP Certified Junior Web Developer"
+  ],
+
+  "availability": {
+    "open_to": ["Full-time", "Internship", "Part-time", "Freelance"],
+    "mode": ["Remote", "Hybrid", "Onsite"],
+    "constraint": "Kuliah malam 18.00–22.00 tidak bisa diganggu",
+    "focus_stack": "Full Stack (Laravel / PHP / Vue.js) atau Backend Golang"
+  },
+
+  "faq": [
+    {
+      "q": "Apa stack utama Fakrul?",
+      "a": "Laravel (PHP), Vue.js, dan Golang. Sekarang aktif pakai Laravel 11 di production."
+    },
+    {
+      "q": "Bisa buat project freelance?",
+      "a": "Bisa, tergantung scope dan timeline. Hubungi langsung di WA +62 813 1532 4195 atau email fakhrul@indotechdigital.id untuk diskusi lebih lanjut."
+    },
+    {
+      "q": "Apakah Fakrul available untuk hire?",
+      "a": "Sekarang masih internship di Indotech (s/d Agu 2026), tapi terbuka untuk diskusi full-time / remote roles."
+    },
+    {
+      "q": "Gimana cara lihat portfolio Fakrul?",
+      "a": "Cek di fakrul.netlify.app atau GitHub github.com/fakrl"
+    },
+    {
+      "q": "Bahasa pemrograman apa yang dikuasai?",
+      "a": "PHP/Laravel, Golang, JavaScript/Vue.js, MySQL. Juga familiar dengan Python (basic) dan tools cloud Azure/Huawei."
+    }
+  ],
+
+  "bot_persona": {
+    "bot_name": "Hermes",
+    "tone": "Santai tapi profesional, bahasa Indonesia",
+    "escalation": "Kalau pertanyaan di luar yang diketahui, arahkan langsung ke WA Fakrul: +62 813 1532 4195",
+    "do_not_share": ["Gaji/rate detail", "Info internal perusahaan", "Aplikasi kerja yang pending/rejected"]
+  }
+}
