@@ -8,6 +8,7 @@ const path = require('path')
 
 // --- Config ---
 const HISTORY_FILE = './history.json'
+const NAMES_FILE = './names.json'
 const QUESTIONS_LOG = './questions_log.md'
 const MEMORY_FILE = './memory.md'
 const SOUL_PATH = path.join(os.homedir(), '.hermes', 'SOUL.md')
@@ -29,27 +30,35 @@ let paused = false
 const rateLimitMap = {}   // chatId -> [timestamps]
 const cooldownMap = {}    // chatId -> cooldown end timestamp
 const burstBuffer = {}    // chatId -> { timer, messages[] }
+const nameMap = fs.existsSync(NAMES_FILE) ? JSON.parse(fs.readFileSync(NAMES_FILE, 'utf8')) : {}
 
-const ai = new OpenAI({
-  baseURL: 'https://api.groq.com/openai/v1',
-  apiKey: process.env.GROQ_API_KEY,
-})
-const aiFallback = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-})
+const PROVIDERS = [
+  { name: 'Groq',       baseURL: 'https://api.groq.com/openai/v1',      apiKey: process.env.GROQ_API_KEY,       model: process.env.MODEL_GROQ },
+  { name: 'Cerebras',   baseURL: 'https://api.cerebras.ai/v1',           apiKey: process.env.CEREBRAS_API_KEY,   model: process.env.MODEL_CEREBRAS },
+  { name: 'Together',   baseURL: 'https://api.together.xyz/v1',          apiKey: process.env.TOGETHER_API_KEY,   model: process.env.MODEL_TOGETHER },
+  { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1',         apiKey: process.env.OPENROUTER_API_KEY, model: process.env.MODEL_OPENROUTER },
+].map(p => ({ ...p, client: new OpenAI({ baseURL: p.baseURL, apiKey: p.apiKey }) }))
+
+const ROTATE_EVERY = parseInt(process.env.ROTATE_EVERY) || 20
+let callCount = 0
 
 async function callAI(messages) {
-  try {
-    const res = await ai.chat.completions.create({ model: process.env.MODEL_PRIMARY, messages })
-    if (res?.choices?.[0]) return res.choices[0].message.content
-  } catch (err) {
-    if (err.status !== 429) throw err
-    console.log('Groq rate limited, fallback ke OpenRouter')
+  const start = Math.floor(callCount / ROTATE_EVERY) % PROVIDERS.length
+  callCount++
+  for (let i = 0; i < PROVIDERS.length; i++) {
+    const p = PROVIDERS[(start + i) % PROVIDERS.length]
+    try {
+      const res = await p.client.chat.completions.create({ model: p.model, messages })
+      if (res?.choices?.[0]) {
+        if (i > 0) console.log(`Using ${p.name}`)
+        return res.choices[0].message.content
+      }
+    } catch (err) {
+      if (err.status === 429) { console.log(`${p.name} rate limited, next...`); continue }
+      throw err
+    }
   }
-  const res = await aiFallback.chat.completions.create({ model: process.env.MODEL_FALLBACK, messages })
-  if (!res?.choices?.[0]) throw new Error('Bad API response: ' + JSON.stringify(res))
-  return res.choices[0].message.content
+  throw new Error('All providers rate limited')
 }
 
 // --- History ---
@@ -100,10 +109,11 @@ async function compressMemory() {
 }
 
 // ponytail: fire-and-forget memory update
-async function updateMemory(userMsg, botReply) {
+async function updateMemory(userMsg, botReply, isAdmin = false) {
   const currentMemory = fs.existsSync(MEMORY_FILE) ? fs.readFileSync(MEMORY_FILE, 'utf8') : ''
+  const adminNote = isAdmin ? '\nIni percakapan dari admin/owner bot sendiri. SKIP kalau hanya tanya status internal bot (siapa yang chat, list kontak, statistik, dsb) — simpan hanya kalau ada info personal atau preferensi Fakrul yang genuinely berguna.' : ''
   try {
-    const extracted = (await callAI([{ role: 'user', content: `Percakapan:\nUser: ${userMsg}\nBot: ${botReply}\n\nMemory ada:\n${currentMemory}\n\nAda info baru yang berguna? Tulis SATU baris dimulai "- ". Kalau tidak ada/sudah ada: SKIP` }])).trim()
+    const extracted = (await callAI([{ role: 'user', content: `Percakapan:\nUser: ${userMsg}\nBot: ${botReply}\n\nMemory ada:\n${currentMemory}\n\nAda info baru yang berguna? Tulis SATU baris dimulai "- ". Kalau tidak ada/sudah ada: SKIP${adminNote}` }])).trim()
     if (!extracted.startsWith('SKIP') && extracted.startsWith('- ')) {
       fs.appendFileSync(MEMORY_FILE, `\n${extracted}`)
       console.log('Memory updated:', extracted)
@@ -146,15 +156,21 @@ async function processMessage(msg, chatId, text) {
     knownContacts.add(chatId)
     notifyAdmin(`👤 Kontak baru: ${chatId.replace('@c.us', '')}\nPesan: "${text}"`)
   }
+  if (msg.notifyName && !nameMap[chatId]) {
+    nameMap[chatId] = msg.notifyName
+    fs.writeFileSync(NAMES_FILE, JSON.stringify(nameMap))
+  }
 
   // Profanity check
   if (contains(text, PROFANITY)) {
-    const chat = await msg.getChat()
-    await chat.sendSeen()
-    await chat.sendStateTyping()
-    await new Promise(r => setTimeout(r, 1500))
-    await chat.clearState()
-    await msg.reply('Hei, kita bisa ngobrol dengan baik kok. Ada yang bisa dibantu?')
+    try {
+      const chat = await msg.getChat()
+      await chat.sendSeen()
+      await chat.sendStateTyping()
+      await new Promise(r => setTimeout(r, 1500))
+      await chat.clearState()
+      await msg.reply('Hei, kita bisa ngobrol dengan baik kok. Ada yang bisa dibantu?')
+    } catch (_) {}
     notifyAdmin(`🚨 Profanity dari ${chatId.replace('@c.us', '')}: "${text}"`)
     return
   }
@@ -178,10 +194,13 @@ async function processMessage(msg, chatId, text) {
     : ''
   const systemPrompt = loadSystemPrompt() + extra
 
-  // Typing indicator
-  const chat = await msg.getChat()
-  await chat.sendSeen()
-  await chat.sendStateTyping()
+  // Typing indicator — getChat() bisa throw kalau WA session reset
+  let chat = null
+  try {
+    chat = await msg.getChat()
+    await chat.sendSeen()
+    await chat.sendStateTyping()
+  } catch (_) {}
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -194,7 +213,7 @@ async function processMessage(msg, chatId, text) {
 
       // Proportional delay based on reply length
       await new Promise(r => setTimeout(r, typingDelay(reply.length)))
-      await chat.clearState()
+      if (chat) await chat.clearState()
 
       history[chatId].push({ role: 'assistant', content: reply })
       saveHistory()
@@ -205,7 +224,7 @@ async function processMessage(msg, chatId, text) {
       if (err.status === 429 && attempt < 2) {
         await new Promise(r => setTimeout(r, (attempt + 1) * 5000))
       } else {
-        await chat.clearState()
+        if (chat) await chat.clearState()
         console.error('API error:', err.message)
         break
       }
@@ -260,10 +279,28 @@ async function handleAdmin(msg) {
     return `History ${args} dihapus.`
   }
   if (cmd === '/chat') {
-    if (!args) return 'Usage: /chat <nomor>'
-    const target = args.replace('+', '') + '@c.us'
-    if (!history[target]?.length) return `Tidak ada history untuk ${args}`
+    if (!args) return 'Usage: /chat <nomor atau chatId>'
+    const raw = args.replace('+', '')
+    const target = history[raw] ? raw
+      : history[raw + '@c.us'] ? raw + '@c.us'
+      : history[raw + '@lid'] ? raw + '@lid'
+      : Object.keys(history).find(k => k.startsWith(raw + '@'))
+    if (!target || !history[target]?.length) return `Tidak ada history untuk ${args}`
     return history[target].slice(-10).map(m => `[${m.role}]: ${m.content}`).join('\n\n')
+  }
+  if (cmd === '/send') {
+    const spaceIdx = args.indexOf(' ')
+    if (spaceIdx === -1) return 'Usage: /send <nomor atau chatId> <pesan>'
+    const rawTarget = args.slice(0, spaceIdx)
+    const message = args.slice(spaceIdx + 1)
+    const byName = Object.entries(nameMap).find(([, name]) => name.toLowerCase() === rawTarget.toLowerCase())?.[0]
+    const target = byName ?? (rawTarget.includes('@') ? rawTarget : rawTarget.replace('+', '') + '@c.us')
+    try {
+      await client.sendMessage(target, message)
+      return `Pesan terkirim ke ${target}`
+    } catch (err) {
+      return `Gagal kirim ke ${target}: ${err.message}`
+    }
   }
   if (cmd === '/forget') {
     if (!args) return 'Usage: /forget <kata kunci>'
@@ -274,18 +311,23 @@ async function handleAdmin(msg) {
     return `Baris yang mengandung "${args}" dihapus.`
   }
   if (cmd === '/help') {
-    return `Perintah admin:\n/status — statistik bot\n/log — 10 pertanyaan terakhir\n/memory — isi memory\n/add <teks> — tambah memory\n/forget <kata kunci> — hapus baris dari memory\n/soul <teks> — update personality\n/pause — mode manual\n/resume — aktifkan bot\n/clear <nomor> — hapus history\n/chat <nomor> — lihat riwayat\n/help — daftar perintah`
+    return `Perintah admin:\n/status — statistik bot\n/log — 10 pertanyaan terakhir\n/memory — isi memory\n/add <teks> — tambah memory\n/forget <kata kunci> — hapus baris dari memory\n/soul <teks> — update personality\n/pause — mode manual\n/resume — aktifkan bot\n/clear <nomor> — hapus history\n/chat <nomor atau chatId> — lihat riwayat\n/send <nomor atau chatId> <pesan> — kirim pesan ke kontak\n/help — daftar perintah`
   }
 
   // Pesan bebas dari admin — owner mode: pakai SOUL tapi tanpa gatekeeper
-  const adminPrompt = `Kamu adalah Hermes, bot WA pribadi Fakrul Mukhlisin — Full Stack Developer, owner dan satu-satunya admin bot ini. Yang ngobrol sama kamu sekarang adalah FAKRUL MUKHLISIN sendiri. Kalau dia tanya "gua siapa" atau "gua admin bukan", jawab tegas: dia Fakrul, owner lo. Jawab santai, langsung, boleh bercanda. Plain text pendek, kayak chat biasa — jangan list, jangan formal.`
+  const contacts = Object.keys(history)
+    .filter(k => k !== ADMIN && !k.includes('@g.us') && !k.includes('broadcast'))
+    .map(k => nameMap[k] ? `${nameMap[k]} (${k.replace('@c.us', '').replace('@lid', '')})` : k.replace('@c.us', '').replace('@lid', ''))
+    .join(', ') || 'belum ada'
+  const adminPrompt = `Kamu adalah Hermes, bot WA pribadi Fakrul Mukhlisin — Full Stack Developer, owner dan satu-satunya admin bot ini. Yang ngobrol sama kamu sekarang adalah FAKRUL MUKHLISIN sendiri. Kalau dia tanya "gua siapa" atau "gua admin bukan", jawab tegas: dia Fakrul, owner lo. Jawab santai, langsung, boleh bercanda. Plain text pendek, kayak chat biasa — jangan list, jangan formal.
+Data kamu saat ini: kontak yang pernah chat = ${contacts}. Kalau Fakrul tanya siapa aja yang chat, jawab dari data ini.`
   if (!history[ADMIN]) history[ADMIN] = []
   history[ADMIN].push({ role: 'user', content: text })
   if (history[ADMIN].length > 20) history[ADMIN].shift()
   const reply = await callAI([{ role: 'system', content: adminPrompt }, ...history[ADMIN]])
   history[ADMIN].push({ role: 'assistant', content: reply })
   saveHistory()
-  updateMemory(text, reply)
+  updateMemory(text, reply, true)
   return reply
 }
 
@@ -331,7 +373,7 @@ client.on('message', async msg => {
 
   // Burst handling — debounce 2 detik
   handleBurst(chatId, msg.body, (combined) => {
-    processMessage(msg, chatId, combined)
+    processMessage(msg, chatId, combined).catch(err => console.error('processMessage error:', err.message))
   })
 })
 
