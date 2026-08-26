@@ -68,6 +68,11 @@ const PROVIDERS = [
   { name: 'Cerebras',   baseURL: 'https://api.cerebras.ai/v1',           apiKey: process.env.CEREBRAS_API_KEY,   model: process.env.MODEL_CEREBRAS },
   { name: 'Together',   baseURL: 'https://api.together.xyz/v1',          apiKey: process.env.TOGETHER_API_KEY,   model: process.env.MODEL_TOGETHER },
   { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1',         apiKey: process.env.OPENROUTER_API_KEY, model: process.env.MODEL_OPENROUTER },
+  // 9router: proxy lokal (localhost:20128) ke banyak provider (OpenRouter/Gemini/NVIDIA/Ollama/Kiro).
+  // ponytail: koneksi "claude" sengaja DIHAPUS dari database 9router (subscription pribadi Fakrul,
+  // jangan kepakai buat balas chat WA orang lain) — jadi provider ini nggak akan pernah ke-route ke situ.
+  // Kalau proses 9router lagi mati di komputar Fakrul, provider ini otomatis gagal & callAI() skip ke provider lain.
+  { name: '9router',    baseURL: process.env.ROUTER9_BASE_URL || 'http://localhost:20128/v1', apiKey: process.env.ROUTER9_API_KEY, model: process.env.MODEL_9ROUTER },
 ]
   .filter(p => {
     if (!p.apiKey) { console.warn(`⚠️  ${p.name} dilewati: API key kosong`); return false }

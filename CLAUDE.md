@@ -55,9 +55,16 @@ Gagal semua provider → user dibales pesan gangguan + admin dapat alert (bukan 
 
 ### Multi-provider AI rotation
 
-`PROVIDERS[]` = Groq → Cerebras → Together → OpenRouter, semua lewat SDK `openai`
+`PROVIDERS[]` = Groq → Cerebras → Together → OpenRouter → 9router, semua lewat SDK `openai`
 (OpenAI-compatible endpoint). Provider tanpa API key atau tanpa model otomatis di-skip saat
 boot; kalau nol provider → `process.exit(1)`.
+
+**9router** (opsional) — proxy lokal (`localhost:20128`) yang di-router ke banyak provider
+sekaligus (OpenRouter/Gemini/NVIDIA/Ollama/Kiro, dst), dikonfigurasi lewat dashboard-nya
+sendiri, bukan lewat bot.js. Koneksi "claude" sengaja dihapus dari database 9router-nya
+Fakrul — subscription pribadi/kerjaan, jangan kepakai buat balas chat WA orang lain. Kosong
+`ROUTER9_API_KEY`/`MODEL_9ROUTER` di `.env` = otomatis di-skip, bot tetap jalan pakai 4
+provider lain.
 
 `callAI(messages, { retries })`:
 
@@ -125,6 +132,7 @@ Pesan admin non-command → owner-mode chat, bot tahu daftar kontak yang pernah 
 
 `GROQ_API_KEY` `CEREBRAS_API_KEY` `TOGETHER_API_KEY` `OPENROUTER_API_KEY`
 `MODEL_GROQ` `MODEL_CEREBRAS` `MODEL_TOGETHER` `MODEL_OPENROUTER`
+`ROUTER9_API_KEY` `ROUTER9_BASE_URL` (default `http://localhost:20128/v1`) `MODEL_9ROUTER` (opsional)
 `ROTATE_EVERY` `ADMIN_NUMBER` (full chatId, termasuk `@c.us`/`@lid`)
 `AI_TIMEOUT_MS` (default 30000) `MEMORY_EVERY` (default 5) `SOUL_PATH` (opsional)
 `ACTIVE_HOURS` — format `"H-H"` jam lokal, half-open (`8-22` = 08.00–21.59).
