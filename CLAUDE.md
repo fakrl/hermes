@@ -168,3 +168,11 @@ assertion di `smoke.js`.
 - `memory.md` masih ada di commit history lama (`git rm --cached` cuma stop tracking ke depan).
 - Rate limiter & burst buffer in-memory → reset tiap restart.
 - Belum ada auto-reconnect. `disconnected` cuma nge-log; butuh restart manual atau pm2.
+- **Model gratis/free-tier provider itu VOLATILE** — sering deprecated, dipindah ke tier
+  enterprise-only, atau expire tanpa banyak warning. 26 Agu 2026: `llama-3.3-70b-versatile`
+  (Groq) ternyata udah Enterprise-only, `llama-3.3-70b` hilang total dari Cerebras public
+  endpoint (cuma sisa `gpt-oss-120b`/`gemma-4-31b`), Together nggak punya tier gratis buat
+  chat model apa pun (`Prism-ML/Ternary-Bonsai-27B` satu-satunya $0.00), dan model gratis
+  OpenRouter yang dipakai (`dots-studio/dots-3-note-preview:free`) **expire 30 Sep 2026** —
+  cek ulang sebelum tanggal itu. Kalau provider mendadak selalu gagal, curigai model ID
+  basi duluan sebelum debug kode.
