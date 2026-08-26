@@ -1,8 +1,19 @@
 node_modules/
 .env
+.claude/
+
+# Session WhatsApp
 .wwebjs_auth/
 .wwebjs_cache/
+
+# Data runtime — berisi kontak & percakapan orang lain
 history.json
 questions_log.md
+names.json
+memory.md
+
+# Persona & data pribadi
+SOUL.md
 fakrul_private.json
+
 *.pdf
