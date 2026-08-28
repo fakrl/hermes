@@ -650,9 +650,17 @@ function startWhatsApp() {
   const { Client, LocalAuth } = require('whatsapp-web.js')
   const qrcode = require('qrcode-terminal')
 
+  // PUPPETEER_EXECUTABLE_PATH: opsional, buat lingkungan yang nggak punya Chromium bundled
+  // Puppeteer sendiri (mis. Termux/Android — arsitektur nggak didukung Puppeteer, jadi
+  // dipasang PUPPETEER_SKIP_DOWNLOAD=true + Chromium sistem lewat `pkg install chromium`).
+  // Kosong di komputer biasa = Puppeteer pakai Chromium bundled-nya sendiri, nggak berubah.
   client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { args: ['--no-sandbox', '--disable-dev-shm-usage'], protocolTimeout: 0 }
+    puppeteer: {
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      protocolTimeout: 0,
+      ...(process.env.PUPPETEER_EXECUTABLE_PATH ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH } : {}),
+    }
   })
 
   client.on('qr', qr => {
