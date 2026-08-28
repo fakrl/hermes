@@ -378,13 +378,15 @@ function handleBurst(chatId, text, callback) {
 // --- Main reply logic ---
 async function processMessage(msg, chatId, text) {
   const isNew = !knownContacts.has(chatId)
-  if (isNew) {
-    knownContacts.add(chatId)
-    notifyAdmin(`👤 Kontak baru: ${nameMap[chatId] || shortId(chatId)}\nPesan: "${text}"`)
-  }
+  // ponytail: simpan notifyName SEBELUM notif "kontak baru" dikirim — kalau kebalik,
+  // nameMap[chatId] masih kosong pas dicek dan admin cuma dapat shortId (angka @lid mentah).
   if (msg.notifyName && !nameMap[chatId]) {
     nameMap[chatId] = msg.notifyName
     fs.writeFileSync(NAMES_FILE, JSON.stringify(nameMap))
+  }
+  if (isNew) {
+    knownContacts.add(chatId)
+    notifyAdmin(`👤 Kontak baru: ${nameMap[chatId] || shortId(chatId)}\nPesan: "${text}"`)
   }
 
   // Profanity check
