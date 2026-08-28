@@ -31,6 +31,7 @@ t('pakai prefix +',       () => assert.strictEqual(bot.resolveChatId('+628999'),
 t('chatId lengkap',       () => assert.strictEqual(bot.resolveChatId('777888@lid'), '777888@lid'))
 t('cari lewat nama',      () => assert.strictEqual(bot.resolveChatId('budi'), '777888@lid'))
 t('nggak ketemu → null',  () => assert.strictEqual(bot.resolveChatId('000000'), null))
+t('shortId LID mentah (dipakai /rename)', () => assert.strictEqual(bot.resolveChatId('777888'), '777888@lid'))
 
 console.log('\n── trimHistory ──')
 t(`cap di ${bot.HISTORY_CAP}, buang yang paling lama`, () => {

@@ -348,6 +348,29 @@ Jawab HANYA satu baris: entah "SKIP", atau satu fakta baru dengan format "- <fak
   }
 }
 
+// Nebak nama orang dari pesan pertamanya (dipanggil cuma kalau WhatsApp nggak ngirim
+// notifyName). Jawaban AI sengaja dibatasi ketat biar nggak salah tangkap nama orang LAIN
+// yang disebut di pesan (mis. "aku temennya Budi") — kalau ragu, harus jawab "?".
+async function guessNameFromMessage(text) {
+  try {
+    const guess = (await callAI([{ role: 'user', content:
+`Dari pesan WhatsApp ini, apakah pengirimnya MENYEBUT NAMANYA SENDIRI secara eksplisit
+(mis. "halo aku Budi", "nama saya Sari", "ini Dika ya")?
+
+Pesan: "${text}"
+
+Jawab HANYA satu kata: nama itu (kapital di awal, tanpa embel-embel), atau "?" kalau nggak
+ada nama diri yang disebut eksplisit. JANGAN menebak dari konteks, JANGAN pakai nama orang
+lain yang disebut di pesan. Kalau ragu sedikit pun, jawab "?".` }], { retries: 0 })).trim()
+
+    if (!guess || guess === '?' || guess.length > 30 || guess.includes(' ') && guess.split(' ').length > 3) return null
+    return guess.replace(/[^\p{L}\s'-]/gu, '').trim() || null
+  } catch (err) {
+    console.warn('guessNameFromMessage gagal (diabaikan):', err.message)
+    return null
+  }
+}
+
 // --- Rate limiter ---
 function checkRateLimit(chatId) {
   const now = Date.now()
@@ -387,6 +410,18 @@ async function processMessage(msg, chatId, text) {
   if (isNew) {
     knownContacts.add(chatId)
     notifyAdmin(`👤 Kontak baru: ${nameMap[chatId] || shortId(chatId)}\nPesan: "${text}"`)
+    // WhatsApp nggak selalu kirim notifyName (kontak belum set nama profil). Kalau kosong,
+    // coba tebak dari isi pesan pertama pakai AI — fire-and-forget biar nggak nunda balasan
+    // ke user. Hasilnya nyusul lewat notif terpisah + langsung kepakai buat sapaan berikutnya.
+    if (!nameMap[chatId]) {
+      guessNameFromMessage(text).then(guess => {
+        if (guess && !nameMap[chatId]) {
+          nameMap[chatId] = guess
+          fs.writeFileSync(NAMES_FILE, JSON.stringify(nameMap))
+          notifyAdmin(`✏️ AI nebak nama dari pesan: "${guess}" (${shortId(chatId)})\nKalau salah: /rename ${shortId(chatId)} <nama benar>`)
+        }
+      })
+    }
   }
 
   // Profanity check
@@ -522,6 +557,19 @@ async function handleAdmin(msg) {
     saveHistory()
     return `History ${nameMap[target] || shortId(target)} dihapus.`
   }
+  if (cmd === '/rename') {
+    const spaceIdx = args.indexOf(' ')
+    if (spaceIdx === -1) return 'Usage: /rename <nomor|nama lama|chatId> <nama baru>'
+    const rawTarget = args.slice(0, spaceIdx)
+    const newName = args.slice(spaceIdx + 1).trim()
+    if (!newName) return 'Usage: /rename <nomor|nama lama|chatId> <nama baru>'
+    const target = resolveChatId(rawTarget)
+    if (!target) return `Kontak "${rawTarget}" nggak ketemu. Cek /who buat daftar kontak.`
+    const oldName = nameMap[target] || shortId(target)
+    nameMap[target] = newName
+    fs.writeFileSync(NAMES_FILE, JSON.stringify(nameMap))
+    return `Nama diganti: ${oldName} → ${newName}`
+  }
   if (cmd === '/chat') {
     if (!args) return 'Usage: /chat <nomor|nama|chatId>'
     const target = resolveChatId(args)
@@ -569,6 +617,7 @@ async function handleAdmin(msg) {
       '/pause — mode manual',
       '/resume — aktifkan bot',
       '/clear <nomor|nama> — hapus history',
+      '/rename <nomor|nama lama> <nama baru> — koreksi nama kontak',
       '/chat <nomor|nama> — lihat riwayat',
       '/send <nomor|nama> <pesan> — kirim pesan',
       '/help — daftar perintah',
